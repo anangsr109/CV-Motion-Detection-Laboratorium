@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Model weights (auto-download; too large to version)
+models/*.caffemodel
+models/*.pb
+models/*.weights
+models/*.onnx
+
+# Self-learning state
+data/learned_params.json
+
+# OS
+Thumbs.db
+.DS_Store

@@ -28,10 +28,10 @@ USE_BILATERAL_FILTER = False     # True = bilateral filter (edge-preserving), Fa
 # ============================================================
 # FRAME DIFFERENCING PARAMETER
 # ============================================================
-FRAME_DIFF_THRESHOLD = 8           # Threshold binarisasi (0-255) — diturunkan dari 10 untuk menangkap gerakan halus
-MIN_CONTOUR_AREA = 150             # Luas minimum kontur — diturunkan dari 300 untuk menangkap gerakan kecil/jauh
-DILATE_ITERATIONS = 3              # Jumlah iterasi dilasi — dinaikkan dari 2 untuk menyambung area terfragmentasi
-ADAPTIVE_THRESHOLD_ENABLED = True  # Gunakan adaptive threshold (menyesuaikan cahaya lokal)
+FRAME_DIFF_THRESHOLD = 25          # Threshold binarisasi (0-255) — dinaikkan agar noise sensor tidak dianggap gerakan
+MIN_CONTOUR_AREA = 800            # Luas minimum kontur — dinaikkan agar hanya gerakan berarti yang dihitung
+DILATE_ITERATIONS = 2              # Jumlah iterasi dilasi — secukupnya untuk menyambung area tanpa menggabung semua objek
+ADAPTIVE_THRESHOLD_ENABLED = False # Fixed threshold lebih stabil untuk motion; adaptive cenderung menghasilkan noise
 ADAPTIVE_BLOCK_SIZE = 15           # Block size untuk adaptive threshold (harus ganjil)
 ADAPTIVE_C = 5                     # Konstanta dikurangi dari threshold
 
@@ -39,14 +39,14 @@ ADAPTIVE_C = 5                     # Konstanta dikurangi dari threshold
 # BACKGROUND SUBTRACTION PARAMETER
 # ============================================================
 BG_SUB_METHOD = "MOG2"             # Pilihan: "MOG2" atau "KNN"
-MOG2_HISTORY = 200                 # Jumlah frame untuk history MOG2 — diturunkan dari 300 untuk adaptasi lebih cepat
-MOG2_VAR_THRESHOLD = 8             # Variance threshold MOG2 — diturunkan dari 10, lebih sensitif terhadap perubahan kecil
+MOG2_HISTORY = 300                 # Jumlah frame untuk history MOG2 — lebih panjang = model background lebih stabil
+MOG2_VAR_THRESHOLD = 25            # Variance threshold MOG2 — dinaikkan agar micro-noise tidak jadi foreground
 MOG2_DETECT_SHADOWS = True         # Deteksi bayangan
 MOG2_LEARNING_RATE_INIT = 0.01     # Learning rate awal MOG2 (fase belajar background)
 MOG2_LEARNING_RATE_STABLE = 0.003  # Learning rate stabil MOG2 (lebih sensitif terhadap foreground)
 MOG2_WARMUP_FRAMES = 60            # Jumlah frame warmup sebelum beralih ke learning rate stabil
-KNN_HISTORY = 200                  # Jumlah frame untuk history KNN — diturunkan dari 300
-KNN_DIST2_THRESHOLD = 150.0        # Distance threshold KNN — diturunkan dari 200 untuk sensitifitas tinggi
+KNN_HISTORY = 300                  # Jumlah frame untuk history KNN
+KNN_DIST2_THRESHOLD = 400.0        # Distance threshold KNN — dinaikkan agar lebih tahan noise
 KNN_DETECT_SHADOWS = True          # Deteksi bayangan
 KNN_LEARNING_RATE_INIT = 0.01      # Learning rate awal KNN
 KNN_LEARNING_RATE_STABLE = 0.003   # Learning rate stabil KNN
@@ -68,10 +68,39 @@ USE_CLAHE = True                   # Gunakan CLAHE untuk histogram equalization
 CLAHE_CLIP_LIMIT = 2.5            # Clip limit CLAHE — sedikit dinaikkan dari 2.0 untuk kontras lebih baik
 
 # ============================================================
+# DEEP LEARNING HUMAN DETECTION (OpenCV DNN - MobileNet-SSD)
+# ============================================================
+# Detektor berbasis deep learning memakai modul cv2.dnn (tanpa dependensi baru).
+# Model MobileNet-SSD (Caffe) akan otomatis di-download ke folder models/ saat
+# pertama kali dipakai. Cocok untuk orang berdiri/menghadap kamera; pada sudut
+# kamera dari atas (CCTV kelas) deteksi full-body memang terbatas.
+DNN_ENABLED = True
+MODELS_DIR = os.path.join(BASE_DIR, "models")
+DNN_PROTOTXT_PATH = os.path.join(MODELS_DIR, "MobileNetSSD_deploy.prototxt")
+DNN_MODEL_PATH = os.path.join(MODELS_DIR, "MobileNetSSD_deploy.caffemodel")
+DNN_PROTOTXT_URL = "https://github.com/djmv/MobilNet_SSD_opencv/raw/master/MobileNetSSD_deploy.prototxt"
+DNN_MODEL_URL = "https://github.com/djmv/MobilNet_SSD_opencv/raw/master/MobileNetSSD_deploy.caffemodel"
+DNN_CONFIDENCE_THRESHOLD = 0.35    # Confidence minimum agar deteksi dianggap manusia
+DNN_NMS_THRESHOLD = 0.45           # Overlap threshold Non-Maximum Suppression
+DNN_INPUT_SIZE = 300               # Ukuran input jaringan (MobileNet-SSD = 300x300)
+DNN_PERSON_CLASS_ID = 15           # ID kelas "person" pada dataset VOC MobileNet-SSD
+DNN_USE_MOTION_ROI = True          # Jalankan DNN pada ROI gerakan (lebih cepat & fokus)
+
+# ============================================================
 # TEMPORAL SMOOTHING & MOTION PERSISTENCE
 # ============================================================
 MOTION_PERSISTENCE_FRAMES = 3      # Berapa frame motion tetap "aktif" setelah terdeteksi terakhir
 MOTION_HISTORY_WEIGHT = 0.4        # Bobot history mask dalam temporal blending (0.0-1.0)
+
+# ============================================================
+# FRAME-LEVEL MOTION GATE
+# ============================================================
+# Gate ini mencegah "selalu MOTION": sebuah frame baru dianggap MOTION jika
+# total luas area bergerak (gabungan kontur valid) melewati ambang ini, ATAU
+# ada satu kontur yang cukup besar. Tanpa gate, noise kecil di banyak titik
+# membuat hampir semua frame ter-flag sebagai motion.
+MOTION_MIN_TOTAL_AREA = 4000       # Total luas kontur valid minimum agar frame dianggap MOTION
+MOTION_SINGLE_AREA_TRIGGER = 6000  # Satu kontur ≥ nilai ini langsung memicu MOTION
 
 # ============================================================
 # SHADOW REMOVAL
@@ -121,6 +150,7 @@ METHOD_DISPLAY_NAMES = {
     "2": "MOG2",
     "3": "KNN",
     "4": "BG Subtraction + HOG Human Detection",
+    "5": "BG Subtraction + DNN Human Detection",
 }
 
 
