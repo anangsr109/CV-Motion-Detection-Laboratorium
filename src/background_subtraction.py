@@ -24,6 +24,8 @@ from src.config import (
     MIN_HUMAN_HEIGHT,
     MOTION_PERSISTENCE_FRAMES,
     MOTION_HISTORY_WEIGHT,
+    MOTION_MIN_TOTAL_AREA,
+    MOTION_SINGLE_AREA_TRIGGER,
     SHADOW_THRESHOLD,
 )
 
@@ -217,6 +219,16 @@ class BackgroundSubtraction:
                         (200, 200, 200),  # Abu-abu
                         1,  # Tipis
                     )
+
+        # ====== Frame-level Motion Gate ======
+        # Cegah "selalu MOTION": frame dianggap bergerak hanya jika total luas
+        # kontur valid cukup besar, atau ada satu kontur yang dominan.
+        total_area = sum(cv2.contourArea(c) for c in contours_detected)
+        max_area = max((cv2.contourArea(c) for c in contours_detected), default=0.0)
+        motion_detected = (
+            total_area >= MOTION_MIN_TOTAL_AREA
+            or max_area >= MOTION_SINGLE_AREA_TRIGGER
+        )
 
         return motion_detected, annotated, contours_detected
 

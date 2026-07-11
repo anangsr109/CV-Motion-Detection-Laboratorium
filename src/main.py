@@ -20,6 +20,8 @@ from src.config import (
     HUMAN_DETECTION_ENABLED,
     ADAPTIVE_LEARNING_ENABLED,
     LEARNING_EPOCH_FRAMES,
+    MOTION_MIN_TOTAL_AREA,
+    MOTION_SINGLE_AREA_TRIGGER,
     create_directories,
     get_method_output_paths,
 )
@@ -27,6 +29,7 @@ from src.preprocessing import preprocess_frame
 from src.frame_difference import FrameDifference
 from src.background_subtraction import BackgroundSubtraction
 from src.human_detector import HumanDetector
+from src.dnn_detector import DNNPersonDetector, ModelDownloadError
 from src.alarm import Alarm
 from src.logger import MotionLogger
 from src.bbox_stabilizer import BBoxStabilizer
@@ -41,19 +44,22 @@ def select_method():
     print("  [1] 3-Frame Differencing")
     print("  [2] Background Subtraction (MOG2)")
     print("  [3] Background Subtraction (KNN)")
-    print("  [4] BG Subtraction + HOG Human Detection (Akurasi Tinggi) ★")
+    print("  [4] BG Subtraction + HOG Human Detection ★")
+    print("  [5] BG Subtraction + DNN Human Detection (Deep Learning) ★★")
     print()
 
     while True:
-        choice = input("Masukkan pilihan (1/2/3/4): ").strip()
+        choice = input("Masukkan pilihan (1/2/3/4/5): ").strip()
         if choice == "1":
-            return FrameDifference(), False, "1"
+            return FrameDifference(), None, "1"
         elif choice == "2":
-            return BackgroundSubtraction(method="MOG2"), False, "2"
+            return BackgroundSubtraction(method="MOG2"), None, "2"
         elif choice == "3":
-            return BackgroundSubtraction(method="KNN"), False, "3"
+            return BackgroundSubtraction(method="KNN"), None, "3"
         elif choice == "4":
-            return BackgroundSubtraction(method="MOG2"), True, "4"
+            return BackgroundSubtraction(method="MOG2"), "hog", "4"
+        elif choice == "5":
+            return BackgroundSubtraction(method="MOG2"), "dnn", "5"
         else:
             print("Pilihan tidak valid. Silakan coba lagi.")
 
@@ -61,7 +67,7 @@ def select_method():
 def run_detection():
 
     # Pilih metode
-    detector, use_human_detection, method_key = select_method()
+    detector, human_mode, method_key = select_method()
     method_name = detector.get_method_name()
 
     # Buat semua direktori yang dibutuhkan (termasuk folder spesifik metode)
@@ -76,10 +82,21 @@ def run_detection():
 
     # Inisialisasi Human Detector jika dipilih
     human_detector = None
-    if use_human_detection:
+    if human_mode == "hog":
         human_detector = HumanDetector()
         method_name = f"{method_name} + HOG Human Detection"
         print(f"\n★ Mode Akurasi Tinggi: HOG + SVM Pedestrian Detection aktif")
+    elif human_mode == "dnn":
+        try:
+            human_detector = DNNPersonDetector()
+            method_name = f"{method_name} + DNN Human Detection"
+            print(f"\n★★ Mode Deep Learning: MobileNet-SSD (OpenCV DNN) aktif")
+        except (ModelDownloadError, cv2.error) as e:
+            print(f"\n[WARNING] Gagal memuat model DNN: {e}")
+            print("[WARNING] Beralih ke HOG Human Detection sebagai fallback.")
+            human_detector = HumanDetector()
+            human_mode = "hog"
+            method_name = f"{method_name} + HOG Human Detection (fallback)"
 
     print(f"\nMetode terpilih: {method_name}")
     print(f"Output folder : {method_paths['output_dir']}")
@@ -209,8 +226,16 @@ def run_detection():
                     1,
                 )
 
-            # Update motion status berdasarkan stable boxes
-            motion_detected = len(stable_boxes) > 0
+            # Update motion status berdasarkan stable boxes + motion gate
+            active_area = sum(sb["area"] for sb in stable_boxes if sb["is_active"])
+            max_box_area = max(
+                (sb["area"] for sb in stable_boxes if sb["is_active"]),
+                default=0.0,
+            )
+            motion_detected = (
+                active_area >= MOTION_MIN_TOTAL_AREA
+                or max_box_area >= MOTION_SINGLE_AREA_TRIGGER
+            )
 
             # Deteksi manusia (Stage 2) — jika mode akurasi tinggi
             person_count = 0
@@ -222,10 +247,9 @@ def run_detection():
                     )
                 )
 
-                # Jika tidak ada manusia terdeteksi oleh HOG,
-                # masih hitung motion tapi tandai sebagai unverified
-                if person_count == 0:
-                    # Cek kontur yang memenuhi aspect ratio (fallback)
+                # Fallback aspect-ratio hanya untuk HOG; deteksi DNN sudah
+                # otoritatif sehingga tidak perlu di-inflate oleh heuristik.
+                if human_mode == "hog" and person_count == 0:
                     human_contours, _ = human_detector.validate_motion_as_human(
                         frame_resized, contours
                     )

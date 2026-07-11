@@ -15,6 +15,8 @@ from src.config import (
     ADAPTIVE_C,
     MOTION_PERSISTENCE_FRAMES,
     MOTION_HISTORY_WEIGHT,
+    MOTION_MIN_TOTAL_AREA,
+    MOTION_SINGLE_AREA_TRIGGER,
 )
 
 
@@ -191,6 +193,16 @@ class FrameDifference:
                 box_color,
                 1,
             )
+
+        # ====== Frame-level Motion Gate ======
+        # Cegah "selalu MOTION": frame dianggap bergerak hanya jika total luas
+        # kontur valid cukup besar, atau ada satu kontur yang dominan.
+        total_area = sum(cv2.contourArea(c) for c in contours_detected)
+        max_area = max((cv2.contourArea(c) for c in contours_detected), default=0.0)
+        motion_detected = (
+            total_area >= MOTION_MIN_TOTAL_AREA
+            or max_area >= MOTION_SINGLE_AREA_TRIGGER
+        )
 
         # Update frame history (geser)
         self.prev_prev_frame = self.prev_frame.copy()
