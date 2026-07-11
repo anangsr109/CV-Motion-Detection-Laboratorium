@@ -76,9 +76,18 @@ def ensure_model(prototxt_path=DNN_PROTOTXT_PATH, model_path=DNN_MODEL_PATH,
             continue
         print(f"[DNN] Mengunduh {label} model ke {path} ...")
         try:
-            with opener.open(url, timeout=60) as resp, open(path, "wb") as f:
+            tmp_path = path + ".part"
+            with opener.open(url, timeout=60) as resp, open(tmp_path, "wb") as f:
                 f.write(resp.read())
+            os.replace(tmp_path, path)
         except Exception as e:
+            # Hapus file parsial agar download diulang pada run berikutnya.
+            for leftover in (path + ".part", path):
+                try:
+                    if os.path.exists(leftover):
+                        os.remove(leftover)
+                except OSError:
+                    pass
             raise ModelDownloadError(
                 f"Gagal mengunduh {label} dari {url}: {e}"
             ) from e

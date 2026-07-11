@@ -228,7 +228,10 @@ def run_detection():
 
             # Update motion status berdasarkan stable boxes + motion gate
             active_area = sum(sb["area"] for sb in stable_boxes if sb["is_active"])
-            max_box_area = max((sb["area"] for sb in stable_boxes), default=0.0)
+            max_box_area = max(
+                (sb["area"] for sb in stable_boxes if sb["is_active"]),
+                default=0.0,
+            )
             motion_detected = (
                 active_area >= MOTION_MIN_TOTAL_AREA
                 or max_box_area >= MOTION_SINGLE_AREA_TRIGGER
